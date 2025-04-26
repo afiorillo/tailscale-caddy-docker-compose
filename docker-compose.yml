@@ -5,15 +5,15 @@ services:
     # "hostname" appears as the device name in the Tailscale network.
     # For example, "my-service.my-tailscale-network.ts.net".
     # This domain name is used in "Caddyfile".
-    hostname: my-service
+    hostname: ${SERVICE_NAME}
     environment:
-      # Tailscale OAuth secret.
+      - TS_SERVE_CONFIG=/etc/tailscale/config/serve.json
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_EXTRA_ARGS=${TS_EXTRA_ARGS}
-      # Tailscale state dir
       - TS_STATE_DIR=/var/lib/tailscale
     volumes:
       # See "volumes:" below for details.
+      - ./tsconfig/:/etc/tailscale/config/:ro
       - ts-lib-var:/var/lib/tailscale
       - ts-run-var:/var/run/tailscale
       - ts-tmp:/tmp
@@ -23,36 +23,18 @@ services:
       - sys_module
     restart: unless-stopped
 
-  caddy:
-    image: caddy:alpine
-    restart: unless-stopped
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - ts-run-var:/var/run/tailscale
-      - ts-tmp:/tmp
-    depends_on:
-      - tailscale
-    network_mode: service:tailscale
-
   # A service behind Tailscale and Caddy reverse proxy.
   # In this case, nginx serving a static html at port 8080.
   # The name "web" is used in "Caddyfile".
   web:
-    image: nginx:alpine
+    image: networkstatic/iperf3
     restart: unless-stopped
-    volumes:
-      - ./templates:/etc/nginx/templates
-      - ./html:/usr/share/nginx/html:ro
-    # Expose port to Caddy.
+    container_name: iperf3-server
+    command: -secret
     expose:
-      - 8585
-    environment:
-      # "default.conf.template" uses this variable.
-      - PORT=8585
+      - ${SERVICE_PORT}
     depends_on:
       - tailscale
-      - caddy
-
 
 volumes:
   # Tailscale state dir.
