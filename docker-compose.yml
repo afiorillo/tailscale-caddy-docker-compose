@@ -1,10 +1,27 @@
 services:
+  # A service behind Tailscale. As long as it's (A) `web`, (B) hosts :8080 and (C) depends on Tailscale
+  # then it will be hosted at `https://<service_name>.tailXXXXX.ts.net/`
+  #
+  # Note that the exposed ports are for the host, not Tailscale. Tailscale forwards to the port within
+  # the container.
+  web:
+    image: caddy:2
+    restart: unless-stopped
+    container_name: caddy-server
+    command: caddy file-server --browse --root /usr/share/caddy --listen :8080
+    volumes:
+      - ./www/:/usr/share/caddy/:ro
+      - caddy_data:/data
+    ports:
+      - 9090:8080
+    depends_on:
+      - tailscale
 
+  # The tailscale service. It connects to Tailscale and hosts a server based on the 
+  # configuration in tsconfig/serve.json . By default it expects to forward to
+  # `http://web:8080` .
   tailscale:
     image: tailscale/tailscale:stable
-    # "hostname" appears as the device name in the Tailscale network.
-    # For example, "my-service.my-tailscale-network.ts.net".
-    # This domain name is used in "Caddyfile".
     hostname: ${SERVICE_NAME}
     environment:
       - TS_SERVE_CONFIG=/etc/tailscale/config/serve.json
@@ -12,39 +29,17 @@ services:
       - TS_EXTRA_ARGS=${TS_EXTRA_ARGS}
       - TS_STATE_DIR=/var/lib/tailscale
     volumes:
-      # See "volumes:" below for details.
       - ./tsconfig/:/etc/tailscale/config/:ro
       - ts-lib-var:/var/lib/tailscale
-      - ts-run-var:/var/run/tailscale
-      - ts-tmp:/tmp
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - net_admin
       - sys_module
     restart: unless-stopped
 
-  # A service behind Tailscale and Caddy reverse proxy.
-  # In this case, nginx serving a static html at port 8080.
-  # The name "web" is used in "Caddyfile".
-  web:
-    image: networkstatic/iperf3
-    restart: unless-stopped
-    container_name: iperf3-server
-    command: -secret
-    expose:
-      - ${SERVICE_PORT}
-    depends_on:
-      - tailscale
-
 volumes:
+  caddy_data: # any Docker-managed service volumes can be put here 
+
   # Tailscale state dir.
   ts-lib-var:
-    driver: local
-  # For "/var/run/tailscale/tailscaled.sock".
-  # Shared between tailscale and caddy containers.
-  ts-run-var:
-    driver: local
-  # For "/tmp/tailscaled.sock" because "/var/run/tailscale/tailscaled.sock" is symlinked to it.
-  # Shared between tailscale and caddy containers.
-  ts-tmp:
     driver: local
